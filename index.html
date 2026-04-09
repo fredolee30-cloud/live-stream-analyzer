@@ -1,0 +1,2065 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>直播文稿分析工具</title>
+    <!-- 导出 PDF 所需的库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- 图表库 Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* API Key 设置 */
+        .api-setting {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .api-setting input {
+            flex: 1;
+            min-width: 300px;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .api-setting input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* 文本输入区 */
+        .textarea-container {
+            position: relative;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            padding: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .char-count {
+            text-align: right;
+            color: #999;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        /* 分析结果 */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-card.compliance {
+            border-left-color: #ff6b6b;
+        }
+
+        .result-card.quality {
+            border-left-color: #51cf66;
+        }
+
+        .result-card.suggestions {
+            border-left-color: #fcc419;
+        }
+
+        .result-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .result-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .result-value.success { color: #51cf66; }
+        .result-value.warning { color: #fcc419; }
+        .result-value.danger { color: #ff6b6b; }
+
+        .score-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: conic-gradient(#51cf66 0deg, #51cf66 0deg, #e0e0e0 0deg, #e0e0e0 360deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px auto;
+        }
+
+        .score-inner {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        /* 详细报告 */
+        .report-section {
+            margin-top: 20px;
+        }
+
+        .report-section h3 {
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .report-item {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .report-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .report-item-title {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-danger {
+            background: #ffe3e3;
+            color: #c92a2a;
+        }
+
+        .badge-warning {
+            background: #fff9db;
+            color: #e67700;
+        }
+
+        .badge-success {
+            background: #d3f9d8;
+            color: #2b8a3e;
+        }
+
+        .report-item-content {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .highlight {
+            background: #fff3bf;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* 加载状态 */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 隐藏/显示 */
+        .hidden {
+            display: none;
+        }
+
+        /* 提示框 */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.error {
+            background: #ff6b6b;
+        }
+
+        .toast.success {
+            background: #51cf66;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* 维度评分条 */
+        .dimension-bar {
+            margin-bottom: 12px;
+        }
+
+        .dimension-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .bar-container {
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .bar-fill.macro { background: linear-gradient(90deg, #667eea, #764ba2); }
+        .bar-fill.tech { background: linear-gradient(90deg, #51cf66, #20c997); }
+        .bar-fill.commodity { background: linear-gradient(90deg, #ffd43b, #fab005); }
+        .bar-fill.allocation { background: linear-gradient(90deg, #20c997, #12b886); }
+        .bar-fill.education { background: linear-gradient(90deg, #339af0, #2185d0); }
+        .bar-fill.interaction { background: linear-gradient(90deg, #e599f7, #be4bdb); }
+        .bar-fill.logic { background: linear-gradient(90deg, #fcc419, #fab005); }
+        .bar-fill.data { background: linear-gradient(90deg, #339af0, #2185d0); }
+        .bar-fill.need { background: linear-gradient(90deg, #ff6b6b, #fa5252); }
+        .bar-fill.argument { background: linear-gradient(90deg, #f06595, #e64980); }
+        .bar-fill.persuasion { background: linear-gradient(90deg, #cc5de8, #be4bdb); }
+        .bar-fill.practical { background: linear-gradient(90deg, #4dabf7, #339af0); }
+        .bar-fill.framework { background: linear-gradient(90deg, #63e6be, #38d9a9); }
+        .bar-fill.clarity { background: linear-gradient(90deg, #ffd43b, #fab005); }
+        .bar-fill.case { background: linear-gradient(90deg, #20c997, #12b886); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 直播文稿分析工具</h1>
+            <p>基于 AI 的直播内容分析 - 主题识别 | 合规检测 | 质量评估</p>
+        </header>
+
+        <!-- API Key 设置 -->
+        <div class="card">
+            <div class="card-title">⚙️ 配置</div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 14px; color: #666; margin-bottom: 8px;">Kimi API Key：</label>
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <input type="password" id="apiKeyInput" placeholder="请输入你的 Kimi API Key（sk-开头）" style="flex: 1; min-width: 250px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
+                    <button class="btn btn-secondary" onclick="saveApiKey()">保存</button>
+                    <span id="apiKeyStatus" style="font-size: 13px;"></span>
+                </div>
+                <div style="margin-top: 8px; font-size: 12px; color: #999;">
+                    🔑 获取 API Key: <a href="https://platform.moonshot.cn/console/api-keys" target="_blank" style="color: #667eea;">https://platform.moonshot.cn</a>
+                </div>
+            </div>
+            <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid #e0e0e0;">
+                <label style="font-size: 14px; color: #666;">模型选择：</label>
+                <select id="modelSelect" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 14px;" onchange="updateModelHint(); saveModel();">
+                    <option value="moonshot-v1-8k">moonshot-v1-8k (约 8000 字，¥0.012/千字)</option>
+                    <option value="moonshot-v1-32k" selected>moonshot-v1-32k (约 30000 字，¥0.024/千字，推荐)</option>
+                    <option value="moonshot-v1-128k">moonshot-v1-128k (约 120000 字，¥0.06/千字)</option>
+                    <option value="deepseek-chat">DeepSeek V3 (128k，性价比高)</option>
+                    <option value="qwen-max">通义千问 Max (256k，最长上下文)</option>
+                </select>
+                <span id="modelHint" style="font-size: 12px; color: #999;"></span>
+                <button class="btn btn-secondary" id="autoRecommendBtn" onclick="autoRecommendModel()" style="padding: 6px 12px; font-size: 12px;">📏 自动推荐</button>
+            </div>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e0e0e0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <label style="font-size: 14px; color: #666;">分析模板：</label>
+                <select id="templateSelect" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 14px;" onchange="loadTemplate()">
+                    <option value="">-- 选择模板 --</option>
+                </select>
+                <button class="btn btn-secondary" onclick="saveTemplate()">💾 保存模板</button>
+                <button class="btn btn-secondary" onclick="openTemplateManager()">📋 管理模板</button>
+            </div>
+        </div>
+
+        <!-- 文稿输入 -->
+        <div class="card">
+            <div class="card-title">📝 输入直播文稿</div>
+            <div class="textarea-container">
+                <textarea id="scriptText" placeholder="请粘贴直播文稿内容到这里...
+
+示例格式：
+主持人：欢迎大家来到直播间，今天我们来聊聊最近的宏观经济形势...
+嘉宾：好的，我觉得可以从几个方面来看..." oninput="updateCharCount(); updateModelHint();"></textarea>
+            </div>
+            <div class="char-count"><span id="charCount">0</span> 字</div>
+            <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                <button class="btn btn-primary" onclick="analyzeScript()">开始分析</button>
+                <button class="btn btn-secondary" onclick="clearAll()">清空</button>
+                <button class="btn btn-secondary" onclick="loadSample()">加载示例</button>
+                <button class="btn btn-secondary" onclick="toggleFileManager()">📁 文件管理</button>
+                <button class="btn btn-secondary" onclick="toggleBatchAnalysis()">📚 批量分析</button>
+            </div>
+        </div>
+
+        <!-- 批量分析 -->
+        <div id="batchAnalysisSection" class="card hidden">
+            <div class="card-title">📚 批量分析（最多 5 篇）</div>
+            <div style="margin-bottom: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
+                <div style="margin-bottom: 12px;">
+                    <input type="file" id="batchFileInput" accept=".txt,.docx,.pdf,.md,.json" multiple style="display: none;" onchange="handleBatchFileSelect(event)">
+                    <button class="btn btn-primary" onclick="document.getElementById('batchFileInput').click()">📤 选择文件（最多 5 个）</button>
+                </div>
+                <div id="batchFileList" style="font-size: 13px; color: #666;"></div>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="startBatchAnalysis()" id="batchAnalyzeBtn" disabled>开始批量分析</button>
+                <button class="btn btn-secondary" onclick="clearBatchFiles()">清空</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('batchAnalysisSection').classList.add('hidden')">关闭</button>
+            </div>
+            <div id="batchResults" style="margin-top: 24px;"></div>
+        </div>
+
+        <!-- 分析结果 -->
+        <div id="resultsSection" class="card hidden">
+            <div class="card-title">📈 分析结果</div>
+
+            <div class="results-grid">
+                <!-- 主题分析 -->
+                <div class="result-card">
+                    <div class="result-label">内容主题</div>
+                    <div id="themeResult">-</div>
+                    <div id="themeBars" style="margin-top: 16px;"></div>
+                </div>
+
+                <!-- 合规检测 -->
+                <div class="result-card compliance">
+                    <div class="result-label">合规检测</div>
+                    <div id="complianceResult" class="result-value">-</div>
+                    <div id="complianceIssues" style="margin-top: 8px; font-size: 14px; color: #666;"></div>
+                </div>
+
+                <!-- 质量评分 -->
+                <div class="result-card quality">
+                    <div class="result-label">内容质量</div>
+                    <div class="score-circle" id="scoreCircle">
+                        <div class="score-inner" id="scoreValue">-</div>
+                    </div>
+                    <div id="qualityLevel" style="text-align: center; font-size: 14px; color: #666;"></div>
+                </div>
+
+                <!-- 改进建议 -->
+                <div class="result-card suggestions">
+                    <div class="result-label">改进建议</div>
+                    <div id="suggestionCount" class="result-value">-</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 8px;">点击查看详细</div>
+                </div>
+            </div>
+
+            <!-- 详细报告 -->
+            <div class="report-section">
+                <h3>📋 详细分析报告</h3>
+                <div id="detailedReport"></div>
+            </div>
+
+            <!-- 导出按钮 -->
+            <div style="margin-top: 24px; padding-top: 20px; border-top: 2px solid #e0e0e0; display: flex; gap: 12px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="exportToWord()">📄 导出 Word</button>
+                <button class="btn btn-primary" onclick="exportToPDF()">📑 导出 PDF</button>
+                <button class="btn btn-secondary" onclick="copySummary()">📋 复制摘要</button>
+                <button class="btn btn-secondary" onclick="createShare()" id="shareBtn" style="display: none;">🔗 创建分享</button>
+            </div>
+        </div>
+
+        <!-- 加载状态 -->
+        <div id="loadingSection" class="card hidden">
+            <div class="loading">
+                <div class="spinner"></div>
+                <span>正在分析文稿内容，请稍候...</span>
+            </div>
+        </div>
+
+        <!-- 文件管理 -->
+        <div id="fileManagerSection" class="card hidden">
+            <div class="card-title">📁 文件管理</div>
+            <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+                <input type="file" id="fileInput" accept=".txt,.docx,.pdf,.md,.json" style="display: none;" onchange="handleFileSelect(event)">
+                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">📤 上传文件</button>
+                <button class="btn btn-secondary" onclick="loadStoredFiles()">🔄 刷新列表</button>
+                <button class="btn btn-secondary" onclick="clearAllFiles()">🗑️ 清空全部</button>
+            </div>
+            <div id="fileList" style="max-height: 300px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        //  配置区域
+        // ============================================
+
+        // 后端 API 地址（留空则使用前端模式，直接调用 Kimi API）
+        const BACKEND_URL = '';
+
+        // 保存 API Key 到本地存储
+        function saveApiKey() {
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            if (!apiKey.startsWith('sk-')) {
+                showToast('API Key 格式错误，应以 sk- 开头');
+                return;
+            }
+            localStorage.setItem('kimi_api_key', apiKey);
+            document.getElementById('apiKeyStatus').innerHTML = '<span style="color: #51cf66;">✓ 已保存</span>';
+            setTimeout(() => {
+                document.getElementById('apiKeyStatus').innerHTML = '';
+            }, 2000);
+            showToast('API Key 已保存到本地', 'success');
+        }
+
+        // 保存模型选择
+        function saveModel() {
+            const model = document.getElementById('modelSelect').value;
+            localStorage.setItem('kimi_model', model);
+            updateModelHint();
+        }
+
+        // 模型配置信息
+        const MODEL_CONFIGS = {
+            'moonshot-v1-8k': { context: 8000, price: 0.012, name: 'Kimi 8k' },
+            'moonshot-v1-32k': { context: 30000, price: 0.024, name: 'Kimi 32k' },
+            'moonshot-v1-128k': { context: 120000, price: 0.06, name: 'Kimi 128k' },
+            'deepseek-chat': { context: 128000, price: 0.004, name: 'DeepSeek V3' },
+            'qwen-max': { context: 256000, price: 0.04, name: '通义千问 Max' }
+        };
+
+        // 更新模型提示
+        function updateModelHint() {
+            const model = document.getElementById('modelSelect').value;
+            const config = MODEL_CONFIGS[model];
+            const textLength = document.getElementById('scriptText').value.length;
+
+            if (config) {
+                const estimateCost = (textLength * config.price / 1000).toFixed(2);
+                const utilization = Math.round((textLength / config.context) * 100);
+
+                let hint = `${config.name} | 上下文：${config.context}字`;
+                if (textLength > 0) {
+                    hint += ` | 当前字数：${textLength} | 利用率：${utilization}%`;
+                    if (textLength > config.context) {
+                        hint += ' ⚠️ 超出上下文限制！';
+                    } else if (utilization > 80) {
+                        hint += ' ⚠️ 接近上限，建议切换更大模型';
+                    }
+                    hint += ` | 估算费用：¥${estimateCost}`;
+                }
+                document.getElementById('modelHint').textContent = hint;
+            }
+        }
+
+        // 自动推荐模型
+        function autoRecommendModel() {
+            const textLength = document.getElementById('scriptText').value.length;
+
+            if (textLength === 0) {
+                showToast('请先输入文稿内容');
+                return;
+            }
+
+            // 推荐逻辑：选择能容纳文本的最小模型
+            const recommendations = [
+                { model: 'moonshot-v1-8k', maxLen: 7000 },
+                { model: 'moonshot-v1-32k', maxLen: 25000 },
+                { model: 'deepseek-chat', maxLen: 100000 },
+                { model: 'moonshot-v1-128k', maxLen: 110000 },
+                { model: 'qwen-max', maxLen: 200000 }
+            ];
+
+            let recommended = 'qwen-max'; // 默认最大
+            for (const rec of recommendations) {
+                if (textLength <= rec.maxLen) {
+                    recommended = rec.model;
+                    break;
+                }
+            }
+
+            document.getElementById('modelSelect').value = recommended;
+            saveModel();
+
+            const config = MODEL_CONFIGS[recommended];
+            showToast(`已推荐：${config.name} (上下文 ${config.context}字)`, 'success');
+        }
+
+        // 从本地存储加载配置
+        function loadConfig() {
+            const savedApiKey = localStorage.getItem('kimi_api_key');
+            const savedModel = localStorage.getItem('kimi_model');
+
+            if (savedApiKey) {
+                document.getElementById('apiKeyInput').value = savedApiKey;
+                document.getElementById('apiKeyStatus').innerHTML = '<span style="color: #51cf66;">✓ 已配置</span>';
+            }
+
+            if (savedModel) {
+                document.getElementById('modelSelect').value = savedModel;
+            }
+            updateModelHint();
+
+            // 加载文件列表
+            if (BACKEND_URL) {
+                loadStoredFiles();
+            }
+        }
+
+        // 切换文件管理器显示
+        function toggleFileManager() {
+            const section = document.getElementById('fileManagerSection');
+            section.classList.toggle('hidden');
+            if (!section.classList.contains('hidden')) {
+                loadStoredFiles();
+            }
+        }
+
+        // 切换批量分析显示
+        function toggleBatchAnalysis() {
+            const section = document.getElementById('batchAnalysisSection');
+            section.classList.toggle('hidden');
+        }
+
+        // 批量分析文件存储
+        let batchFiles = [];
+
+        // 处理批量文件选择
+        function handleBatchFileSelect(event) {
+            const files = Array.from(event.target.files);
+
+            if (files.length + batchFiles.length > 5) {
+                showToast(`最多只能上传 5 个文件（当前已选 ${batchFiles.length} 个）`);
+                return;
+            }
+
+            batchFiles = [...batchFiles, ...files].slice(0, 5);
+            updateBatchFileList();
+        }
+
+        // 更新批量文件列表显示
+        function updateBatchFileList() {
+            const fileList = document.getElementById('batchFileList');
+            if (batchFiles.length === 0) {
+                fileList.innerHTML = '<div style="color: #999;">暂无选择的文件</div>';
+                document.getElementById('batchAnalyzeBtn').disabled = true;
+            } else {
+                fileList.innerHTML = batchFiles.map((f, i) => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; margin-bottom: 8px;">
+                        <span>${i + 1}. ${f.name} (${(f.size / 1024).toFixed(1)} KB)</span>
+                        <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 12px;" onclick="removeBatchFile(${i})">删除</button>
+                    </div>
+                `).join('');
+                document.getElementById('batchAnalyzeBtn').disabled = false;
+            }
+        }
+
+        // 移除批量文件
+        function removeBatchFile(index) {
+            batchFiles.splice(index, 1);
+            updateBatchFileList();
+        }
+
+        // 清空批量文件
+        function clearBatchFiles() {
+            batchFiles = [];
+            document.getElementById('batchFileInput').value = '';
+            updateBatchFileList();
+            document.getElementById('batchResults').innerHTML = '';
+        }
+
+        // 开始批量分析
+        async function startBatchAnalysis() {
+            if (batchFiles.length === 0) {
+                showToast('请先选择文件');
+                return;
+            }
+
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            if (!apiKey || !apiKey.startsWith('sk-')) {
+                showToast('请先输入并保存你的 Kimi API Key');
+                return;
+            }
+
+            const model = document.getElementById('modelSelect').value;
+            const batchResults = [];
+
+            document.getElementById('batchAnalyzeBtn').disabled = true;
+            document.getElementById('batchResults').innerHTML = '<div class="loading"><div class="spinner"></div><span>正在分析第 1/5 篇文稿...</span></div>';
+
+            for (let i = 0; i < batchFiles.length; i++) {
+                const file = batchFiles[i];
+                document.getElementById('batchResults').innerHTML = `<div class="loading"><div class="spinner"></div><span>正在分析第 ${i + 1}/${batchFiles.length} 篇文稿：${file.name}...</span></div>`;
+
+                try {
+                    // 读取文件内容
+                    const text = await readFileContent(file);
+
+                    // 调用 API 分析
+                    const prompt = buildAnalysisPrompt(text);
+                    const response = await callKimiAPI(apiKey, prompt);
+                    const analysis = parseAnalysisResult(response);
+
+                    batchResults.push({
+                        filename: file.name,
+                        text: text,
+                        analysis: analysis
+                    });
+                } catch (error) {
+                    batchResults.push({
+                        filename: file.name,
+                        error: error.message
+                    });
+                }
+            }
+
+            // 显示结果
+            displayBatchResults(batchResults);
+            document.getElementById('batchAnalyzeBtn').disabled = false;
+        }
+
+        // 读取文件内容
+        function readFileContent(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = reject;
+
+                // 简单处理：如果是二进制文件，需要后端解析
+                if (file.name.endsWith('.docx') || file.name.endsWith('.pdf')) {
+                    reject(new Error('Word 和 PDF 文件需要通过后端 API 解析，请先上传到文件管理'));
+                    return;
+                }
+
+                reader.readAsText(file, 'utf-8');
+            });
+        }
+
+        // 显示批量分析结果
+        function displayBatchResults(results) {
+            const container = document.getElementById('batchResults');
+
+            // 过滤掉错误的结果
+            const validResults = results.filter(r => !r.error);
+
+            // 汇总表格 + 趋势图表
+            const summaryTable = `
+                <div class="card-title" style="margin-top: 24px;">📊 汇总对比</div>
+
+                <!-- 趋势图表 -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px; margin-bottom: 24px;">
+                    <div style="padding: 16px; background: #f8f9fa; border-radius: 12px;">
+                        <div style="font-weight: 500; margin-bottom: 12px; text-align: center;">质量维度对比（雷达图）</div>
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                    <div style="padding: 16px; background: #f8f9fa; border-radius: 12px;">
+                        <div style="font-weight: 500; margin-bottom: 12px; text-align: center;">质量总分对比（柱状图）</div>
+                        <canvas id="barChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 汇总表格 -->
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="background: #f8f9fa;">
+                                <th style="padding: 12px; border: 1px solid #e0e0e0; text-align: left;">文稿</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">主题</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">合规</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">总分</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">需求贴合</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">论述质量</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">说服力</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">逻辑完整</th>
+                                <th style="padding: 12px; border: 1px solid #e0e0e0;">实用价值</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${results.map(r => {
+                                if (r.error) {
+                                    return `<tr><td style="padding: 12px; border: 1px solid #e0e0e0;">${r.filename}</td><td colspan="8" style="padding: 12px; border: 1px solid #e0e0e0; color: #ff6b6b;">❌ ${r.error}</td></tr>`;
+                                }
+                                const a = r.analysis;
+                                const mainTheme = [
+                                    { name: '宏观', w: a.theme.macro_weight },
+                                    { name: '科技', w: a.theme.tech_weight },
+                                    { name: '商品', w: a.theme.commodity_weight },
+                                    { name: '配置', w: a.theme.allocation_weight },
+                                    { name: '投教', w: a.theme.education_weight },
+                                    { name: '互动', w: a.theme.interaction_weight }
+                                ].reduce((x, y) => x.w > y.w ? x : y).name;
+                                return `
+                                    <tr>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0;">${r.filename}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${mainTheme}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${a.compliance.is_compliant ? '✅' : '⚠️'}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center; font-weight: bold;">${a.quality.overall_score}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${a.quality.need_fit_score}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${a.quality.argument_score}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${a.quality.persuasion_score}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${a.quality.logic_score}</td>
+                                        <td style="padding: 12px; border: 1px solid #e0e0e0; text-align: center;">${a.quality.practical_score}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            // 逐个详细结果
+            const detailedResults = results.map((r, i) => {
+                if (r.error) {
+                    return `<div class="card" style="margin-top: 24px;"><div class="card-title">❌ ${r.filename}</div><div style="color: #ff6b6b;">分析失败：${r.error}</div></div>`;
+                }
+
+                return `
+                    <div class="card" style="margin-top: 24px;">
+                        <div class="card-title">📄 ${r.filename}</div>
+                        <div id="batchDetail${i}"></div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = summaryTable + detailedResults;
+
+            // 渲染图表
+            renderComparisonCharts(validResults);
+
+            // 填充详细内容
+            results.forEach((r, i) => {
+                if (!r.error) {
+                    const detailContainer = document.getElementById(`batchDetail${i}`);
+                    if (detailContainer) {
+                        renderResultsToElement(r.analysis, detailContainer);
+                    }
+                }
+            });
+        }
+
+        // 渲染对比图表
+        function renderComparisonCharts(results) {
+            if (results.length === 0) return;
+
+            // 准备数据
+            const labels = results.map(r => r.filename.length > 10 ? r.filename.substring(0, 10) + '...' : r.filename);
+
+            // 雷达图：5 个核心维度
+            const radarData = {
+                labels: ['需求贴合', '论述质量', '说服力', '逻辑完整', '实用价值'],
+                datasets: results.map((r, i) => ({
+                    label: labels[i],
+                    data: [
+                        r.analysis.quality.need_fit_score,
+                        r.analysis.quality.argument_score,
+                        r.analysis.quality.persuasion_score,
+                        r.analysis.quality.logic_score,
+                        r.analysis.quality.practical_score
+                    ],
+                    borderColor: getColorForIndex(i),
+                    backgroundColor: getColorForIndex(i, 0.2),
+                    pointBackgroundColor: getColorForIndex(i),
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: getColorForIndex(i)
+                }))
+            };
+
+            // 柱状图：总分对比
+            const barData = {
+                labels: labels,
+                datasets: [{
+                    label: '质量总分',
+                    data: results.map(r => r.analysis.quality.overall_score),
+                    backgroundColor: results.map((_, i) => getColorForIndex(i, 0.7)),
+                    borderColor: results.map((_, i) => getColorForIndex(i)),
+                    borderWidth: 2
+                }]
+            };
+
+            // 渲染雷达图
+            const radarCtx = document.getElementById('radarChart').getContext('2d');
+            new Chart(radarCtx, {
+                type: 'radar',
+                data: radarData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { display: true },
+                            grid: { circular: true },
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { stepSize: 20, backdropColor: 'transparent' }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }
+                    }
+                }
+            });
+
+            // 渲染柱状图
+            const barCtx = document.getElementById('barChart').getContext('2d');
+            new Chart(barCtx, {
+                type: 'bar',
+                data: barData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { stepSize: 20 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `总分：${ctx.parsed.y}`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 获取颜色（根据索引）
+        function getColorForIndex(index, alpha = 1) {
+            const colors = [
+                `rgba(102, 126, 234, ${alpha})`,    // 蓝紫
+                `rgba(81, 207, 102, ${alpha})`,     // 绿色
+                `rgba(255, 107, 107, ${alpha})`,    // 红色
+                `rgba(252, 196, 25, ${alpha})`,     // 黄色
+                `rgba(204, 93, 232, ${alpha})`      // 紫色
+            ];
+            return colors[index % colors.length];
+        }
+
+        // 将结果渲染到指定元素
+        function renderResultsToElement(analysis, container) {
+            // 简化版的结果渲染
+            container.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                    <div style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">
+                        <div style="font-size: 12px; color: #666;">主题分布</div>
+                        <div style="font-weight: 500; margin-top: 4px;">宏观 ${analysis.theme.macro_weight}% | 科技 ${analysis.theme.tech_weight}% | 商品 ${analysis.theme.commodity_weight}%</div>
+                    </div>
+                    <div style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid ${analysis.compliance.is_compliant ? '#51cf66' : '#ff6b6b'};">
+                        <div style="font-size: 12px; color: #666;">合规检测</div>
+                        <div style="font-weight: 500; margin-top: 4px;">${analysis.compliance.is_compliant ? '✅ 合规' : '⚠️ ' + analysis.compliance.issues.length + ' 处风险'}</div>
+                    </div>
+                    <div style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #51cf66;">
+                        <div style="font-size: 12px; color: #666;">质量总分</div>
+                        <div style="font-weight: 500; font-size: 1.5rem; margin-top: 4px;">${analysis.quality.overall_score}</div>
+                    </div>
+                </div>
+                <div style="font-size: 13px; color: #666;">
+                    <div style="margin-bottom: 8px;">需求贴合：${analysis.quality.need_fit_score} | 论述质量：${analysis.quality.argument_score} | 说服力：${analysis.quality.persuasion_score}</div>
+                    <div>逻辑完整：${analysis.quality.logic_score} | 实用价值：${analysis.quality.practical_score} | 逻辑框架：${analysis.quality.framework_score}</div>
+                </div>
+                <div style="margin-top: 16px; padding: 12px; background: #fff9db; border-radius: 8px;">
+                    <div style="font-weight: 500; margin-bottom: 8px;">💡 改进建议</div>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 13px;">
+                        ${analysis.suggestions?.map(s => `<li>${s}</li>`).join('') || '<li>暂无建议</li>'}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // 处理文件选择
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            uploadFile(file);
+        }
+
+        // 上传文件
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showToast(`文件上传成功：${result.filename} (${result.length}字)`, 'success');
+                    document.getElementById('scriptText').value = result.text;
+                    updateCharCount();
+                    updateModelHint();
+                    loadStoredFiles();
+                } else if (result.action === 'need_delete') {
+                    showToast(result.error, 'error');
+                    // 显示文件列表让用户选择删除
+                    loadStoredFiles();
+                } else {
+                    showToast(result.error || '上传失败', 'error');
+                }
+            } catch (error) {
+                showToast(`上传失败：${error.message}`);
+            }
+        }
+
+        // 加载存储的文件列表
+        async function loadStoredFiles() {
+            if (!BACKEND_URL) {
+                document.getElementById('fileList').innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">请先配置后端 API 地址</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/files`);
+                const result = await response.json();
+
+                if (result.files && result.files.length > 0) {
+                    document.getElementById('fileList').innerHTML = `
+                        <div style="font-size: 12px; color: #999; margin-bottom: 8px;">
+                            已存储 ${result.count}/${result.max} 个文件
+                        </div>
+                        ${result.files.map(f => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 8px;">
+                                <div>
+                                    <div style="font-weight: 500;">${f.filename}</div>
+                                    <div style="font-size: 12px; color: #999;">${(f.size / 1024).toFixed(1)} KB · ${f.created_at}</div>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;" onclick="useStoredFile('${f.file_id}')">使用</button>
+                                    <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #ffe3e3;" onclick="deleteStoredFile('${f.file_id}')">删除</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    `;
+                } else {
+                    document.getElementById('fileList').innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">暂无存储的文件</div>';
+                }
+            } catch (error) {
+                document.getElementById('fileList').innerHTML = `<div style="color: #ff6b6b; text-align: center; padding: 20px;">加载失败：${error.message}</div>`;
+            }
+        }
+
+        // 使用存储的文件
+        async function useStoredFile(fileId) {
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/files/${fileId}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('scriptText').value = result.text;
+                    updateCharCount();
+                    updateModelHint();
+                    showToast('文件已加载到输入框', 'success');
+                }
+            } catch (error) {
+                showToast(`加载失败：${error.message}`);
+            }
+        }
+
+        // 删除存储的文件
+        async function deleteStoredFile(fileId) {
+            if (!confirm('确定要删除这个文件吗？')) return;
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/files/${fileId}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast('文件已删除', 'success');
+                    loadStoredFiles();
+                } else {
+                    showToast(result.error || '删除失败', 'error');
+                }
+            } catch (error) {
+                showToast(`删除失败：${error.message}`);
+            }
+        }
+
+        // 清空所有文件
+        async function clearAllFiles() {
+            if (!confirm('确定要清空所有存储的文件吗？')) return;
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/files/clear`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast('已清空所有文件', 'success');
+                    loadStoredFiles();
+                } else {
+                    showToast(result.error || '清空失败', 'error');
+                }
+            } catch (error) {
+                showToast(`清空失败：${error.message}`);
+            }
+        }
+
+        // 加载示例文稿
+        function loadSample() {
+            const sample = `主持人：欢迎大家来到今天的直播间！我是你们的主持人小明。今天我们有幸邀请到了资深市场分析师王老师，来和我们聊聊最近的市场动态。
+
+王老师：大家好，很高兴来到这里。今天我想从宏观经济和科技资产两个角度，跟大家分享一下我的一些观察和思考。
+
+主持人：太好了！王老师，最近很多人都在讨论美联储加息的事情，您怎么看？
+
+王老师：这个问题很好。我们先来看几个数据。美国最新的 CPI 数据是 3.2%，比前值的 3.7% 有所下降，这说明通胀压力确实在缓解。核心 PCE 物价指数同比上涨 2.8%，也在逐步向美联储 2% 的目标靠拢。
+
+主持人：那是不是意味着美联储快要降息了？
+
+王老师：从目前的情况来看，确实有这个可能性。但我们不能简单地做这样的预测。我们要看几个关键指标：首先是就业数据，美国最新的非农就业新增 15 万人，失业率维持在 3.8% 的相对低位；其次是 GDP 增速，三季度年化环比增长 2.1%，显示经济仍有韧性。
+
+主持人：那对于我们普通投资者来说，这意味着什么呢？
+
+王老师：我觉得可以从几个角度来理解。第一，美元资产的吸引力可能会发生变化。美元指数从 107 的高点有所回落，目前大概在 103 附近震荡。第二，对于科技股来说，利率环境的变化会影响估值逻辑。我们知道，科技股的估值很大程度上依赖于未来现金流的折现，利率下降对科技股估值是利好。
+
+主持人：说到科技股，最近 AI 概念特别火，王老师您怎么看这个赛道？
+
+王老师：AI 确实是一个大的趋势。我给大家看一组数据：2023 年全球 AI 市场规模大概是 2000 亿美元，预计到 2030 年可能达到 2 万亿美元，年复合增长率超过 35%。这个增长速度是非常惊人的。
+
+主持人：那是不是现在就可以买 AI 股票了？
+
+王老师：（笑）这个问题很直接啊。我不能给大家推荐具体的股票，这是合规的要求。但我可以从分析的角度跟大家说几点。第一，要看公司的技术壁垒，是不是真的有核心算法和专利；第二，要看商业化落地的能力，技术再好不能变现也不行；第三，要看估值是否合理。
+
+我举个例子，英伟达这家公司，它的 GPU 在 AI 训练领域有很强的竞争优势，2023 财年营收达到 609 亿美元，同比增长 126%。但是它的市盈率也很高，大概 70 倍左右。这样的估值是否合理，需要大家自己去判断。
+
+主持人：明白了，就是不能盲目追高是吧。
+
+王老师：对，投资一定要有自己的判断。我再说说国内的情况。中国的 AI 产业也在快速发展，2023 年中国 AI 核心产业规模超过 5000 亿元，预计到 2025 年可能突破万亿。但是我们要看到，在芯片、算法框架等底层技术上，我们还是和国际领先水平有差距的。
+
+主持人：王老师，您对未来的市场有什么展望吗？
+
+王老师：展望这个词要谨慎使用啊（笑）。我觉得可以说说我的观察框架。从宏观周期来看，我们可能处于一个经济复苏的早期阶段，PMI 在 50% 荣枯线附近波动，CPI 温和上涨，PPI 逐步走出负增长。这种环境下，权益资产的配置价值是在提升的。
+
+主持人：好的，非常感谢王老师的精彩分享！由于时间关系，我们今天的直播就到这里结束了。再次感谢王老师的到来！
+
+王老师：谢谢大家，再见！`;
+            document.getElementById('scriptText').value = sample;
+            document.getElementById('charCount').textContent = sample.length;
+            updateModelHint();
+        }
+
+        // 显示提示框
+        function showToast(message, type = 'error') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // 更新字数统计
+        function updateCharCount() {
+            const text = document.getElementById('scriptText').value;
+            document.getElementById('charCount').textContent = text.length;
+        }
+
+        // 清空
+        function clearAll() {
+            document.getElementById('scriptText').value = '';
+            document.getElementById('charCount').textContent = '0';
+            document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('detailedReport').innerHTML = '';
+        }
+
+        // 全局变量存储分析结果和原文
+        let currentAnalysis = null;
+        let currentScript = '';
+
+        // 导出 Word 文档
+        function exportToWord() {
+            if (!currentAnalysis) {
+                showToast('请先生成分析报告');
+                return;
+            }
+
+            const title = '直播文稿分析报告';
+            const date = new Date().toLocaleString('zh-CN');
+
+            // 构建 Word 文档内容（HTML 格式）
+            const wordContent = `
+<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
+<head>
+    <meta charset='UTF-8'>
+    <style>
+        body { font-family: '微软雅黑', sans-serif; }
+        h1 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        h2 { color: #333; margin-top: 20px; }
+        .section { margin: 20px 0; }
+        .score { font-size: 24px; font-weight: bold; color: #51cf66; }
+        .warning { color: #ff6b6b; }
+        .success { color: #51cf66; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+        td, th { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f0f0ff; }
+        .highlight { background-color: #fff3bf; }
+    </style>
+</head>
+<body>
+    <h1>📊 ${title}</h1>
+    <p>生成时间：${date}</p>
+
+    <div class="section">
+        <h2>一、内容主题分析</h2>
+        <p>${currentAnalysis.theme.summary || '无'}</p>
+        <table>
+            <tr><th>主题</th><th>占比</th></tr>
+            <tr><td>宏观经济</td><td>${currentAnalysis.theme.macro_weight}%</td></tr>
+            <tr><td>科技资产</td><td>${currentAnalysis.theme.tech_weight}%</td></tr>
+            <tr><td>大宗商品</td><td>${currentAnalysis.theme.commodity_weight}%</td></tr>
+            <tr><td>大类资产配置</td><td>${currentAnalysis.theme.allocation_weight}%</td></tr>
+            <tr><td>金融投教知识</td><td>${currentAnalysis.theme.education_weight}%</td></tr>
+            <tr><td>直播互动</td><td>${currentAnalysis.theme.interaction_weight}%</td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>二、合规性检测</h2>
+        <p class="${currentAnalysis.compliance.is_compliant ? 'success' : 'warning'}">
+            ${currentAnalysis.compliance.is_compliant ? '✅ 合规：未发现明显违规内容' : '⚠️ 发现违规内容'}
+        </p>
+        ${currentAnalysis.compliance.issues && currentAnalysis.compliance.issues.length > 0 ? `
+            <table>
+                <tr><th>违规类型</th><th>原文引用</th><th>严重程度</th><th>修改建议</th></tr>
+                ${currentAnalysis.compliance.issues.map(issue => `
+                <tr>
+                    <td>${issue.type}</td>
+                    <td class="highlight">"${issue.content}"</td>
+                    <td>${issue.severity === 'high' ? '高' : issue.severity === 'medium' ? '中' : '低'}</td>
+                    <td>${issue.suggestion}</td>
+                </tr>
+                `).join('')}
+            </table>
+        ` : ''}
+        <p><strong>合规总结：</strong>${currentAnalysis.compliance.summary || '无'}</p>
+    </div>
+
+    <div class="section">
+        <h2>三、内容质量评估</h2>
+        <p class="score">总分：${currentAnalysis.quality.overall_score} / 100</p>
+        <table>
+            <tr><th>维度</th><th>得分</th><th>权重</th></tr>
+            <tr><td>需求贴合度</td><td>${currentAnalysis.quality.need_fit_score}</td><td>18%</td></tr>
+            <tr><td>论述质量</td><td>${currentAnalysis.quality.argument_score}</td><td>18%</td></tr>
+            <tr><td>说服力</td><td>${currentAnalysis.quality.persuasion_score}</td><td>15%</td></tr>
+            <tr><td>逻辑完整性</td><td>${currentAnalysis.quality.logic_score}</td><td>12%</td></tr>
+            <tr><td>实用价值</td><td>${currentAnalysis.quality.practical_score}</td><td>12%</td></tr>
+            <tr><td>逻辑框架</td><td>${currentAnalysis.quality.framework_score}</td><td>10%</td></tr>
+            <tr><td>易懂性</td><td>${currentAnalysis.quality.clarity_score}</td><td>7%</td></tr>
+            <tr><td>数据详实度</td><td>${currentAnalysis.quality.data_score}</td><td>3%</td></tr>
+            <tr><td>案例质量</td><td>${currentAnalysis.quality.case_score}</td><td>5%</td></tr>
+        </table>
+        ${currentAnalysis.quality.deductions && currentAnalysis.quality.deductions.length > 0 ? `
+            <h3>扣分项及建议：</h3>
+            <ul>
+                ${currentAnalysis.quality.deductions.map(d => `<li><strong>${d.dimension}：</strong>${d.issue} → ${d.suggestion}</li>`).join('')}
+            </ul>
+        ` : ''}
+    </div>
+
+    <div class="section">
+        <h2>四、综合改进建议</h2>
+        <ul>
+            ${currentAnalysis.suggestions && currentAnalysis.suggestions.length > 0 ?
+                currentAnalysis.suggestions.map(s => `<li>${s}</li>`).join('') :
+                '<li>暂无建议</li>'}
+        </ul>
+    </div>
+</body>
+</html>`;
+
+            // 创建 Blob 并下载
+            const blob = new Blob([wordContent], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `直播文稿分析报告_${new Date().getTime()}.doc`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Word 文档已导出', 'success');
+        }
+
+        // 导出 PDF
+        function exportToPDF() {
+            if (!currentAnalysis) {
+                showToast('请先生成分析报告');
+                return;
+            }
+
+            const element = document.getElementById('resultsSection');
+            const opt = {
+                margin: [10, 10, 10, 10],
+                filename: `直播文稿分析报告_${new Date().getTime()}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            // 临时展开所有隐藏内容
+            const originalDisplay = element.style.display;
+            html2pdf().set(opt).from(element).save().then(() => {
+                showToast('PDF 已导出', 'success');
+            });
+        }
+
+        // 复制摘要
+        function copySummary() {
+            if (!currentAnalysis) {
+                showToast('请先生成分析报告');
+                return;
+            }
+
+            const date = new Date().toLocaleString('zh-CN');
+            const summary = `📊 直播文稿分析报告
+生成时间：${date}
+
+【内容主题】
+${currentAnalysis.theme.summary || '无'}
+- 宏观经济：${currentAnalysis.theme.macro_weight}%
+- 科技资产：${currentAnalysis.theme.tech_weight}%
+- 大宗商品：${currentAnalysis.theme.commodity_weight}%
+- 大类资产配置：${currentAnalysis.theme.allocation_weight}%
+- 金融投教知识：${currentAnalysis.theme.education_weight}%
+- 直播互动：${currentAnalysis.theme.interaction_weight}%
+
+【合规检测】
+${currentAnalysis.compliance.is_compliant ? '✅ 合规' : '⚠️ 发现违规内容'}
+${currentAnalysis.compliance.summary || ''}
+
+【质量评分】
+总分：${currentAnalysis.quality.overall_score}/100
+- 需求贴合度：${currentAnalysis.quality.need_fit_score}
+- 论述质量：${currentAnalysis.quality.argument_score}
+- 说服力：${currentAnalysis.quality.persuasion_score}
+- 逻辑完整性：${currentAnalysis.quality.logic_score}
+- 实用价值：${currentAnalysis.quality.practical_score}
+- 逻辑框架：${currentAnalysis.quality.framework_score}
+- 易懂性：${currentAnalysis.quality.clarity_score}
+- 数据详实度：${currentAnalysis.quality.data_score}
+- 案例质量：${currentAnalysis.quality.case_score}
+
+【改进建议】
+${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
+
+            navigator.clipboard.writeText(summary).then(() => {
+                showToast('摘要已复制到剪贴板', 'success');
+            }).catch(() => {
+                showToast('复制失败，请手动选择复制');
+            });
+        }
+
+        // 创建分享链接
+        async function createShare() {
+            if (!currentAnalysis) {
+                showToast('请先生成分析报告');
+                return;
+            }
+
+            if (!BACKEND_URL) {
+                showToast('分享功能需要后端 API 支持');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/share/create`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        result: currentAnalysis,
+                        script: currentScript
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const shareUrl = `${BACKEND_URL}/share/${result.share_id}`;
+
+                    // 复制链接到剪贴板
+                    await navigator.clipboard.writeText(shareUrl);
+
+                    showToast(`分享链接已生成并复制：${shareUrl}\n有效期 7 天`, 'success');
+
+                    // 显示分享按钮
+                    document.getElementById('shareBtn').style.display = 'block';
+                } else {
+                    showToast(result.error || '创建分享失败', 'error');
+                }
+            } catch (error) {
+                showToast(`创建分享失败：${error.message}`);
+            }
+        }
+
+        // 更新分数圆环
+        function updateScoreCircle(score) {
+            const circle = document.getElementById('scoreCircle');
+            const degrees = (score / 100) * 360;
+            circle.style.background = `conic-gradient(#51cf66 0deg, #51cf66 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+            document.getElementById('scoreValue').textContent = score;
+        }
+
+        // 分析脚本
+        async function analyzeScript() {
+            const script = document.getElementById('scriptText').value.trim();
+
+            if (!script) {
+                showToast('请输入要分析的文稿内容');
+                return;
+            }
+
+            // 显示加载状态
+            document.getElementById('loadingSection').classList.remove('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+
+            try {
+                let analysis;
+
+                // 判断是否使用后端 API
+                if (BACKEND_URL) {
+                    // 使用后端 API 分析
+                    const model = document.getElementById('modelSelect').value;
+                    const apiKey = document.getElementById('apiKeyInput').value.trim();
+
+                    const response = await fetch(`${BACKEND_URL}/api/analyze`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            script: script,
+                            model: model,
+                            api_key: apiKey
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok || !result.success) {
+                        throw new Error(result.error || '分析失败');
+                    }
+
+                    analysis = result.result;
+                } else {
+                    // 使用前端模式，直接调用 Kimi API
+                    const apiKey = document.getElementById('apiKeyInput').value.trim();
+
+                    if (!apiKey || !apiKey.startsWith('sk-')) {
+                        showToast('请先输入并保存你的 Kimi API Key');
+                        document.getElementById('loadingSection').classList.add('hidden');
+                        return;
+                    }
+
+                    const prompt = buildAnalysisPrompt(script);
+                    const response = await callKimiAPI(apiKey, prompt);
+                    console.log('API Response:', response);
+
+                    // 解析结果
+                    analysis = parseAnalysisResult(response);
+                }
+
+                currentAnalysis = analysis;
+                currentScript = script;
+                renderResults(analysis);
+
+                document.getElementById('loadingSection').classList.add('hidden');
+                document.getElementById('resultsSection').classList.remove('hidden');
+                showToast('分析完成', 'success');
+            } catch (error) {
+                console.error('Analysis error:', error);
+                document.getElementById('loadingSection').classList.add('hidden');
+                showToast(`分析失败：${error.message}`);
+            }
+        }
+
+        // 构建分析提示词
+        function buildAnalysisPrompt(script) {
+            return `你是一位专业的金融财经直播内容分析专家。请对以下直播文稿进行全面分析，严格按照 JSON 格式输出结果。
+
+【分析维度】
+
+1. 内容主题分析（6 大类，权重总和 100%）
+   - 宏观经济：经济数据（GDP/CPI/PPI/PMI/就业/社融）、货币政策（利率/准备金率/央行操作）、财政政策、汇率外汇、全球经济
+   - 科技资产：AI、半导体、云计算、新能源、电动车、生物科技、消费电子、互联网平台
+   - 大宗商品：贵金属（黄金/白银）、能源（原油/天然气）、工业金属（铜/铝/铁矿石）、农产品
+   - 大类资产配置：权益资产（股票/股基）、固定收益（债券/债基/理财）、另类投资、现金管理、保险规划
+   - 金融投教知识：投资基础、分析方法、风险管理、投资心理、理财规划
+   - 直播互动：闲聊、开场白、问答互动、过渡语等非实质内容
+
+2. 合规性检测（6 类违规）
+   - 承诺收益："稳赚不赔"、"一定涨"、"保本保息"等
+   - 预测涨跌："明天必涨"、"目标价 XX"、"抄底时机"等
+   - 政治议题：敏感政治人物、政策猜测、地缘政治判断等
+   - 推荐产品："买 XX 股票"、"推荐 XX 基金"、"重仓 XX"等
+   - 诱导投资：催促下单、限时优惠、制造焦虑等
+   - 违反广告法："最"、"第一"、"绝对"、"100%"等绝对化用语
+
+3. 内容质量评估（9 维度，各 0-100 分，按权重计算总分）
+   - 需求贴合度（权重 18%）：话题是否贴合市场需求、从用户痛点出发、解决核心问题
+   - 论述质量（权重 18%）：问题界定是否清晰、观点是否明确、论证过程是否有说服力
+   - 说服力（权重 15%）：论证深度、反面观点处理
+   - 逻辑完整性（权重 12%）：论点 - 论据 - 结论链条是否完整
+   - 实用价值（权重 12%）：对听众投资理财是否有实际指导意义和可操作性
+   - 逻辑框架（权重 10%）：整体结构清晰度、话题引入/总结、过渡衔接
+   - 易懂性（权重 7%）：专业概念是否"降维"表达、复杂原理是否通俗易懂
+   - 数据详实度（权重 3%）：具体数据引用数量和质量
+   - 案例质量（权重 5%）：案例相关性、时效性、典型性
+
+【输出格式】
+请严格输出以下 JSON 格式（不要有任何额外说明）：
+
+{
+    "theme": {
+        "macro_weight": 0-100,
+        "tech_weight": 0-100,
+        "commodity_weight": 0-100,
+        "allocation_weight": 0-100,
+        "education_weight": 0-100,
+        "interaction_weight": 0-100,
+        "summary": "主题分析总结"
+    },
+    "compliance": {
+        "is_compliant": true/false,
+        "issues": [
+            {
+                "type": "承诺收益/预测涨跌/政治议题/推荐产品/诱导投资/违反广告法",
+                "content": "原文引用",
+                "severity": "high/medium/low",
+                "suggestion": "修改建议"
+            }
+        ],
+        "summary": "合规性总结"
+    },
+    "quality": {
+        "need_fit_score": 0-100,
+        "argument_score": 0-100,
+        "persuasion_score": 0-100,
+        "logic_score": 0-100,
+        "practical_score": 0-100,
+        "framework_score": 0-100,
+        "clarity_score": 0-100,
+        "data_score": 0-100,
+        "case_score": 0-100,
+        "overall_score": 0-100,
+        "deductions": [
+            {
+                "dimension": "维度名称",
+                "issue": "问题描述",
+                "suggestion": "改进建议"
+            }
+        ]
+    },
+    "suggestions": [
+        "具体改进建议 1",
+        "具体改进建议 2"
+    ]
+}
+
+【直播文稿内容】
+${script}`;
+        }
+
+        // 调用 Kimi API
+        async function callKimiAPI(apiKey, prompt) {
+            const url = 'https://api.moonshot.cn/v1/chat/completions';
+
+            // 使用用户选择的模型
+            const model = document.getElementById('modelSelect').value;
+            const textLength = prompt.length;
+            console.log(`使用模型：${model} (文稿长度：${textLength})`);
+
+            const requestBody = {
+                model: model,
+                messages: [
+                    {
+                        role: 'user',
+                        content: prompt
+                    }
+                ],
+                temperature: 0.3,
+                response_format: { type: 'json_object' }
+            };
+
+            console.log('Request body:', JSON.stringify(requestBody, null, 2));
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            console.log('Response status:', response.status);
+            console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Error response:', errorText);
+
+                let errorMessage = `HTTP ${response.status}`;
+                try {
+                    const errorData = JSON.parse(errorText);
+                    if (errorData.error && errorData.error.message) {
+                        errorMessage = errorData.error.message;
+                    }
+                } catch (e) {
+                    errorMessage = errorText || response.statusText;
+                }
+
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+            console.log('API success response:', data);
+
+            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                throw new Error('API 返回格式异常');
+            }
+
+            return data.choices[0].message.content;
+        }
+
+        // 解析分析结果
+        function parseAnalysisResult(content) {
+            try {
+                // 尝试提取 JSON
+                let jsonStr = content.trim();
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    jsonStr = jsonMatch[0];
+                }
+
+                const result = JSON.parse(jsonStr);
+                return result;
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                console.error('Content:', content);
+                throw new Error('API 返回结果格式异常，无法解析');
+            }
+        }
+
+        // 渲染结果
+        function renderResults(analysis) {
+            // 存储分析结果到全局变量，供导出使用
+            currentAnalysis = analysis;
+
+            // 显示分享按钮（如果有后端 API）
+            if (BACKEND_URL) {
+                document.getElementById('shareBtn').style.display = 'block';
+            }
+
+            // 主题分析（6 大类）
+            const themeBars = document.getElementById('themeBars');
+            const themeResult = document.getElementById('themeResult');
+
+            // 找出占比最高的主题
+            const themes = [
+                { name: '宏观经济', weight: analysis.theme.macro_weight },
+                { name: '科技资产', weight: analysis.theme.tech_weight },
+                { name: '大宗商品', weight: analysis.theme.commodity_weight },
+                { name: '大类资产配置', weight: analysis.theme.allocation_weight },
+                { name: '金融投教知识', weight: analysis.theme.education_weight },
+                { name: '直播互动', weight: analysis.theme.interaction_weight }
+            ];
+            const maxTheme = themes.reduce((a, b) => a.weight > b.weight ? a : b);
+
+            let mainTheme = '';
+            if (maxTheme.weight >= 50) {
+                mainTheme = `以${maxTheme.name}为主`;
+            } else {
+                // 找出前两个主题
+                themes.sort((a, b) => b.weight - a.weight);
+                mainTheme = `${themes[0].name} + ${themes[1].name}`;
+            }
+
+            themeResult.innerHTML = `
+                <div class="result-value">${mainTheme}</div>
+                <div style="font-size: 14px; color: #666; margin-top: 4px;">${analysis.theme.summary || ''}</div>
+            `;
+
+            // 主题颜色映射
+            const themeColors = {
+                '宏观经济': 'macro',
+                '科技资产': 'tech',
+                '大宗商品': 'commodity',
+                '大类资产配置': 'allocation',
+                '金融投教知识': 'education',
+                '直播互动': 'interaction'
+            };
+
+            themeBars.innerHTML = themes.map(t => `
+                <div class="dimension-bar">
+                    <div class="dimension-label">
+                        <span>${t.name}</span>
+                        <span>${t.weight}%</span>
+                    </div>
+                    <div class="bar-container">
+                        <div class="bar-fill ${themeColors[t.name]}" style="width: ${t.weight}%"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            // 合规检测
+            const complianceResult = document.getElementById('complianceResult');
+            const complianceIssues = document.getElementById('complianceIssues');
+
+            if (analysis.compliance.is_compliant) {
+                complianceResult.innerHTML = '<span class="result-value success">✅ 合规</span>';
+                complianceIssues.textContent = '未发现明显违规内容';
+            } else {
+                const issueCount = analysis.compliance.issues?.length || 0;
+                complianceResult.innerHTML = `<span class="result-value danger">⚠️ ${issueCount} 处风险</span>`;
+                complianceIssues.textContent = analysis.compliance.summary || '';
+            }
+
+            // 质量评分
+            updateScoreCircle(analysis.quality.overall_score);
+
+            let qualityLevel = '';
+            if (analysis.quality.overall_score >= 90) qualityLevel = 'S - 优秀';
+            else if (analysis.quality.overall_score >= 80) qualityLevel = 'A - 良好';
+            else if (analysis.quality.overall_score >= 70) qualityLevel = 'B - 中等';
+            else if (analysis.quality.overall_score >= 60) qualityLevel = 'C - 合格';
+            else qualityLevel = 'D - 需改进';
+
+            document.getElementById('qualityLevel').textContent = qualityLevel;
+
+            // 改进建议
+            const suggestionCount = document.getElementById('suggestionCount');
+            suggestionCount.textContent = `${analysis.suggestions?.length || 0} 条`;
+
+            // 详细报告
+            const detailedReport = document.getElementById('detailedReport');
+            detailedReport.innerHTML = `
+                <div class="report-item">
+                    <div class="report-item-header">
+                        <span class="report-item-title">📌 主题分布</span>
+                        <span class="badge badge-success">主题明确</span>
+                    </div>
+                    <div class="report-item-content">${analysis.theme.summary}</div>
+                </div>
+
+                <div class="report-item">
+                    <div class="report-item-header">
+                        <span class="report-item-title">⚠️ 合规问题详情</span>
+                        ${analysis.compliance.is_compliant ? '<span class="badge badge-success">无违规</span>' : '<span class="badge badge-danger">需修正</span>'}
+                    </div>
+                    <div class="report-item-content">
+                        ${analysis.compliance.issues?.map(issue => `
+                            <div style="margin-bottom: 12px; padding: 12px; background: white; border-radius: 6px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <span class="badge badge-danger">${issue.type}</span>
+                                    <span style="font-size: 12px; color: #999;">严重程度：${issue.severity === 'high' ? '高' : issue.severity === 'medium' ? '中' : '低'}</span>
+                                </div>
+                                <div style="color: #c92a2a; font-style: italic; margin-bottom: 8px;">"${issue.content}"</div>
+                                <div style="color: #666; font-size: 13px;">💡 建议：${issue.suggestion}</div>
+                            </div>
+                        `).join('') || '<div>未发现违规内容</div>'}
+                    </div>
+                </div>
+
+                <div class="report-item">
+                    <div class="report-item-header">
+                        <span class="report-item-title">📊 质量维度评分</span>
+                    </div>
+                    <div class="report-item-content">
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>需求贴合度</span>
+                                <span>${analysis.quality.need_fit_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill need" style="width: ${analysis.quality.need_fit_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>论述质量</span>
+                                <span>${analysis.quality.argument_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill argument" style="width: ${analysis.quality.argument_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>说服力</span>
+                                <span>${analysis.quality.persuasion_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill persuasion" style="width: ${analysis.quality.persuasion_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>逻辑完整性</span>
+                                <span>${analysis.quality.logic_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill logic" style="width: ${analysis.quality.logic_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>实用价值</span>
+                                <span>${analysis.quality.practical_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill practical" style="width: ${analysis.quality.practical_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>逻辑框架</span>
+                                <span>${analysis.quality.framework_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill framework" style="width: ${analysis.quality.framework_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>易懂性</span>
+                                <span>${analysis.quality.clarity_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill clarity" style="width: ${analysis.quality.clarity_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>数据详实度</span>
+                                <span>${analysis.quality.data_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill data" style="width: ${analysis.quality.data_score}%"></div>
+                            </div>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-label">
+                                <span>案例质量</span>
+                                <span>${analysis.quality.case_score}分</span>
+                            </div>
+                            <div class="bar-container">
+                                <div class="bar-fill case" style="width: ${analysis.quality.case_score}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                ${analysis.quality.deductions?.length > 0 ? `
+                <div class="report-item">
+                    <div class="report-item-header">
+                        <span class="report-item-title">🔧 扣分项及建议</span>
+                    </div>
+                    <div class="report-item-content">
+                        ${analysis.quality.deductions.map(d => `
+                            <div style="margin-bottom: 12px; padding: 12px; background: white; border-radius: 6px;">
+                                <div style="font-weight: 500; color: #333; margin-bottom: 4px;">${d.dimension}</div>
+                                <div style="color: #666; margin-bottom: 8px;">问题：${d.issue}</div>
+                                <div style="color: #2b8a3e; font-size: 13px;">💡 建议：${d.suggestion}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+
+                <div class="report-item">
+                    <div class="report-item-header">
+                        <span class="report-item-title">💡 综合改进建议</span>
+                    </div>
+                    <div class="report-item-content">
+                        <ul style="padding-left: 20px; line-height: 1.8;">
+                            ${analysis.suggestions?.map(s => `<li>${s}</li>`).join('') || '<li>暂无建议</li>'}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================
+        //  模板管理功能
+        // ============================================
+
+        // 加载模板列表
+        function loadTemplateList() {
+            const templates = getTemplates();
+            const select = document.getElementById('templateSelect');
+            select.innerHTML = '<option value="">-- 选择模板 --</option>';
+            templates.forEach(t => {
+                select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+            });
+        }
+
+        // 获取所有模板
+        function getTemplates() {
+            const data = localStorage.getItem('analysis_templates');
+            return data ? JSON.parse(data) : [];
+        }
+
+        // 保存模板
+        function saveTemplate() {
+            const name = prompt('请输入模板名称：');
+            if (!name) return;
+
+            const template = {
+                id: Date.now().toString(),
+                name: name,
+                createdAt: new Date().toISOString(),
+                model: document.getElementById('modelSelect').value
+            };
+
+            const templates = getTemplates();
+            templates.push(template);
+            localStorage.setItem('analysis_templates', JSON.stringify(templates));
+
+            loadTemplateList();
+            showToast(`模板"${name}"已保存`, 'success');
+        }
+
+        // 加载模板
+        function loadTemplate() {
+            const templateId = document.getElementById('templateSelect').value;
+            if (!templateId) return;
+
+            const templates = getTemplates();
+            const template = templates.find(t => t.id === templateId);
+            if (!template) return;
+
+            if (template.model) {
+                document.getElementById('modelSelect').value = template.model;
+                updateModelHint();
+            }
+
+            showToast(`模板"${template.name}"已加载`, 'success');
+        }
+
+        // 打开模板管理器
+        function openTemplateManager() {
+            const templates = getTemplates();
+
+            if (templates.length === 0) {
+                showToast('暂无保存的模板');
+                return;
+            }
+
+            const templateList = templates.map(t => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 8px;">
+                    <div>
+                        <div style="font-weight: 500;">${t.name}</div>
+                        <div style="font-size: 12px; color: #999;">模型：${t.model || 'moonshot-v1-32k'} · ${t.createdAt}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;" onclick="applyTemplate('${t.id}')">应用</button>
+                        <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #ffe3e3;" onclick="deleteTemplate('${t.id}')">删除</button>
+                    </div>
+                </div>
+            `).join('');
+
+            // 使用 toast 显示模板列表（简化处理）
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 2000; max-width: 500px; max-height: 400px; overflow-y: auto;">
+                    <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 16px;">📋 模板管理</div>
+                    ${templateList}
+                    <button class="btn btn-secondary" onclick="this.closest('div').remove()" style="margin-top: 16px; width: 100%;">关闭</button>
+                </div>
+            `;
+            document.body.appendChild(container);
+        }
+
+        // 应用模板
+        function applyTemplate(templateId) {
+            const templates = getTemplates();
+            const template = templates.find(t => t.id === templateId);
+            if (!template) return;
+
+            if (template.model) {
+                document.getElementById('modelSelect').value = template.model;
+                updateModelHint();
+            }
+
+            document.getElementById('templateSelect').value = templateId;
+            showToast(`模板"${template.name}"已应用`, 'success');
+        }
+
+        // 删除模板
+        function deleteTemplate(templateId) {
+            if (!confirm('确定要删除这个模板吗？')) return;
+
+            const templates = getTemplates().filter(t => t.id !== templateId);
+            localStorage.setItem('analysis_templates', JSON.stringify(templates));
+
+            loadTemplateList();
+            document.getElementById('templateSelect').value = '';
+            showToast('模板已删除', 'success');
+        }
+
+        // 页面加载时恢复配置
+        loadConfig();
+        loadTemplateList();
+    </script>
+</body>
+</html>
