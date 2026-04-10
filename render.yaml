@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: live-stream-analyzer-backend
+    env: python
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: RENDER_ENV
+        value: true
+    # Render 免费版的磁盘是临时的，每次部署会清空
+    # 文件存储功能使用内存缓存替代（见 app.py 修改）
+    autoDeploy: true

@@ -20,14 +20,23 @@ STORED_FOLDER = os.path.join(BASE_DIR, 'stored')
 SHARES_FOLDER = os.path.join(BASE_DIR, 'shares')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
+# Render 环境检测 - Render 免费版磁盘是临时的，使用内存存储
+IS_RENDER_ENV = os.environ.get('RENDER_ENV', 'false') == 'true'
+
+# 内存存储（用于 Render 环境）
+render_file_storage = {}
+render_share_storage = {}
+render_config = {}
+
 # 最大文件大小 50MB
 MAX_FILE_SIZE = 50 * 1024 * 1024
 # 最大存储文件数
 MAX_STORED_FILES = 10
 
-# 确保目录存在
-for folder in [UPLOAD_FOLDER, STORED_FOLDER, SHARES_FOLDER]:
-    os.makedirs(folder, exist_ok=True)
+# 确保目录存在（非 Render 环境）
+if not IS_RENDER_ENV:
+    for folder in [UPLOAD_FOLDER, STORED_FOLDER, SHARES_FOLDER]:
+        os.makedirs(folder, exist_ok=True)
 
 # 加载配置
 def load_config():
@@ -39,6 +48,12 @@ def load_config():
         },
         'default_model': 'moonshot-v1-32k'
     }
+    # Render 环境使用内存配置
+    if IS_RENDER_ENV:
+        if not render_config:
+            render_config.update(default_config)
+        return render_config.copy()
+
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
@@ -51,6 +66,12 @@ def load_config():
 
 # 保存配置
 def save_config(config):
+    # Render 环境保存到内存
+    if IS_RENDER_ENV:
+        render_config.clear()
+        render_config.update(config)
+        return
+
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
@@ -154,7 +175,43 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': '文件名为空'}), 400
 
-        # 检查当前存储的文件数量
+        # Render 环境使用内存存储
+        if IS_RENDER_ENV:
+            if len(render_file_storage) >= MAX_STORED_FILES:
+                return jsonify({
+                    'error': f'已达到最大存储数量 ({MAX_STORED_FILES}个)',
+                    'files': list(render_file_storage.keys()),
+                    'action': 'need_delete'
+                }), 400
+
+            file_id = str(uuid.uuid4())
+            file_content = file.read()
+
+            # 解析文件内容
+            text = parse_file_content(file.filename, file_content)
+            if text is None:
+                return jsonify({'error': '不支持的文件格式'}), 400
+
+            text = clean_text(text)
+
+            # 存储到内存
+            render_file_storage[file_id] = {
+                'filename': file.filename,
+                'content': file_content,
+                'text': text,
+                'created_at': datetime.now().isoformat()
+            }
+
+            return jsonify({
+                'success': True,
+                'file_id': file_id,
+                'filename': file.filename,
+                'length': len(text),
+                'text': text,
+                'message': f'文件已存储，当前共 {len(render_file_storage)}/{MAX_STORED_FILES} 个文件'
+            })
+
+        # 非 Render 环境使用文件存储
         existing_files = os.listdir(STORED_FOLDER)
         if len(existing_files) >= MAX_STORED_FILES:
             return jsonify({
@@ -163,38 +220,17 @@ def upload_file():
                 'action': 'need_delete'
             }), 400
 
-        # 生成唯一文件名
         file_id = str(uuid.uuid4())
         original_filename = file.filename
         stored_filename = f"{file_id}_{original_filename}"
         stored_path = os.path.join(STORED_FOLDER, stored_filename)
 
-        # 保存文件
         file_content = file.read()
         with open(stored_path, 'wb') as f:
             f.write(file_content)
 
-        # 解析文件内容
-        text = ''
-        filename = original_filename.lower()
-
-        if filename.endswith('.txt'):
-            text = file_content.decode('utf-8')
-        elif filename.endswith('.docx'):
-            doc = docx.Document(BytesIO(file_content))
-            text = '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
-        elif filename.endswith('.pdf'):
-            pdf_reader = PyPDF2.PdfReader(BytesIO(file_content))
-            text = '\n'.join([page.extract_text() for page in pdf_reader.pages])
-        elif filename.endswith('.md'):
-            text = file_content.decode('utf-8')
-        elif filename.endswith('.json'):
-            try:
-                data = json.loads(file_content.decode('utf-8'))
-                text = data.get('transcript', json.dumps(data, ensure_ascii=False, indent=2))
-            except:
-                text = file_content.decode('utf-8')
-        else:
+        text = parse_file_content(original_filename, file_content)
+        if text is None:
             os.remove(stored_path)
             return jsonify({'error': '不支持的文件格式'}), 400
 
@@ -214,10 +250,57 @@ def upload_file():
         return jsonify({'error': str(e)}), 500
 
 
+def parse_file_content(filename, file_content):
+    """解析文件内容，返回文本"""
+    filename = filename.lower()
+    text = ''
+
+    if filename.endswith('.txt'):
+        try:
+            text = file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                text = file_content.decode('gbk')
+            except:
+                text = file_content.decode('utf-8', errors='ignore')
+    elif filename.endswith('.docx'):
+        doc = docx.Document(BytesIO(file_content))
+        text = '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
+    elif filename.endswith('.pdf'):
+        pdf_reader = PyPDF2.PdfReader(BytesIO(file_content))
+        text = '\n'.join([page.extract_text() for page in pdf_reader.pages])
+    elif filename.endswith('.md'):
+        text = file_content.decode('utf-8')
+    elif filename.endswith('.json'):
+        try:
+            data = json.loads(file_content.decode('utf-8'))
+            text = data.get('transcript', json.dumps(data, ensure_ascii=False, indent=2))
+        except:
+            text = file_content.decode('utf-8')
+    else:
+        return None
+
+    return text
+
+
 @app.route('/api/files', methods=['GET'])
 def list_files():
     """列出已存储的文件"""
     try:
+        # Render 环境使用内存存储
+        if IS_RENDER_ENV:
+            files = [
+                {
+                    'file_id': file_id,
+                    'filename': info['filename'],
+                    'size': len(info['content']),
+                    'created_at': info['created_at']
+                }
+                for file_id, info in render_file_storage.items()
+            ]
+            return jsonify({'files': files, 'count': len(files), 'max': MAX_STORED_FILES})
+
+        # 非 Render 环境使用文件存储
         files = []
         for filename in os.listdir(STORED_FOLDER):
             filepath = os.path.join(STORED_FOLDER, filename)
@@ -237,6 +320,14 @@ def list_files():
 def delete_file(file_id):
     """删除指定文件"""
     try:
+        # Render 环境使用内存存储
+        if IS_RENDER_ENV:
+            if file_id in render_file_storage:
+                del render_file_storage[file_id]
+                return jsonify({'success': True, 'message': '文件已删除'})
+            return jsonify({'error': '文件不存在'}), 404
+
+        # 非 Render 环境使用文件存储
         for filename in os.listdir(STORED_FOLDER):
             if filename.startswith(f"{file_id}_"):
                 filepath = os.path.join(STORED_FOLDER, filename)
@@ -251,6 +342,12 @@ def delete_file(file_id):
 def clear_files():
     """清空所有存储文件"""
     try:
+        # Render 环境使用内存存储
+        if IS_RENDER_ENV:
+            render_file_storage.clear()
+            return jsonify({'success': True, 'message': '已清空所有文件'})
+
+        # 非 Render 环境使用文件存储
         for filename in os.listdir(STORED_FOLDER):
             filepath = os.path.join(STORED_FOLDER, filename)
             os.remove(filepath)
@@ -501,7 +598,17 @@ def create_share():
             'result': analysis_result
         }
 
-        # 保存分享数据
+        # Render 环境使用内存存储
+        if IS_RENDER_ENV:
+            render_share_storage[share_id] = share_data
+            return jsonify({
+                'success': True,
+                'share_id': share_id,
+                'share_url': f"/share/{share_id}",
+                'expires_at': share_data['expires_at']
+            })
+
+        # 非 Render 环境使用文件存储
         share_file = os.path.join(SHARES_FOLDER, f"{share_id}.json")
         with open(share_file, 'w', encoding='utf-8') as f:
             json.dump(share_data, f, ensure_ascii=False, indent=2)
@@ -521,6 +628,30 @@ def create_share():
 def get_share(share_id):
     """获取分享内容"""
     try:
+        # Render 环境使用内存存储
+        if IS_RENDER_ENV:
+            if share_id not in render_share_storage:
+                return jsonify({'error': '分享链接不存在'}), 404
+
+            share_data = render_share_storage[share_id]
+
+            # 检查是否过期
+            expires_at = datetime.fromisoformat(share_data['expires_at'])
+            if datetime.now() > expires_at:
+                del render_share_storage[share_id]
+                return jsonify({'error': '分享链接已过期'}), 404
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'script': share_data['script'],
+                    'result': share_data['result'],
+                    'created_at': share_data['created_at'],
+                    'expires_at': share_data['expires_at']
+                }
+            })
+
+        # 非 Render 环境使用文件存储
         share_file = os.path.join(SHARES_FOLDER, f"{share_id}.json")
 
         if not os.path.exists(share_file):
