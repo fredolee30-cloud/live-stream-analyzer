@@ -793,14 +793,18 @@
                 <div class="card-title" style="margin-top: 24px;">📊 汇总对比</div>
 
                 <!-- 趋势图表 -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px; margin-bottom: 24px;">
-                    <div style="padding: 16px; background: #f8f9fa; border-radius: 12px;">
-                        <div style="font-weight: 500; margin-bottom: 12px; text-align: center;">质量维度对比（雷达图）</div>
-                        <canvas id="radarChart"></canvas>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                    <div style="padding: 12px; background: #f8f9fa; border-radius: 12px; height: 280px;">
+                        <div style="font-weight: 500; margin-bottom: 8px; text-align: center; font-size: 14px;">质量维度对比（雷达图）</div>
+                        <div style="height: 240px; position: relative;">
+                            <canvas id="radarChart"></canvas>
+                        </div>
                     </div>
-                    <div style="padding: 16px; background: #f8f9fa; border-radius: 12px;">
-                        <div style="font-weight: 500; margin-bottom: 12px; text-align: center;">质量总分对比（柱状图）</div>
-                        <canvas id="barChart"></canvas>
+                    <div style="padding: 12px; background: #f8f9fa; border-radius: 12px; height: 280px;">
+                        <div style="font-weight: 500; margin-bottom: 8px; text-align: center; font-size: 14px;">质量总分对比（柱状图）</div>
+                        <div style="height: 240px; position: relative;">
+                            <canvas id="barChart"></canvas>
+                        </div>
                     </div>
                 </div>
 
@@ -945,11 +949,11 @@
                             grid: { circular: true },
                             beginAtZero: true,
                             max: 100,
-                            ticks: { stepSize: 20, backdropColor: 'transparent' }
+                            ticks: { stepSize: 20, backdropColor: 'transparent', font: { size: 9 } }
                         }
                     },
                     plugins: {
-                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }
+                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 }, padding: 5 } }
                     }
                 }
             });
@@ -966,7 +970,7 @@
                         y: {
                             beginAtZero: true,
                             max: 100,
-                            ticks: { stepSize: 20 }
+                            ticks: { stepSize: 20, font: { size: 9 } }
                         }
                     },
                     plugins: {
