@@ -887,6 +887,14 @@
         function renderComparisonCharts(results) {
             if (results.length === 0) return;
 
+            // 销毁旧图表实例（防止重复渲染导致无限循环）
+            if (window.batchRadarChart) {
+                window.batchRadarChart.destroy();
+            }
+            if (window.batchBarChart) {
+                window.batchBarChart.destroy();
+            }
+
             // 准备数据
             const labels = results.map(r => r.filename.length > 10 ? r.filename.substring(0, 10) + '...' : r.filename);
 
@@ -925,7 +933,7 @@
 
             // 渲染雷达图
             const radarCtx = document.getElementById('radarChart').getContext('2d');
-            new Chart(radarCtx, {
+            window.batchRadarChart = new Chart(radarCtx, {
                 type: 'radar',
                 data: radarData,
                 options: {
@@ -948,7 +956,7 @@
 
             // 渲染柱状图
             const barCtx = document.getElementById('barChart').getContext('2d');
-            new Chart(barCtx, {
+            window.batchBarChart = new Chart(barCtx, {
                 type: 'bar',
                 data: barData,
                 options: {
@@ -1943,20 +1951,60 @@ ${script}`;
         //  模板管理功能
         // ============================================
 
+        // 默认模板（内置）
+        const DEFAULT_TEMPLATES = [
+            {
+                id: 'default_financial',
+                name: '📈 金融财经直播（默认）',
+                createdAt: '2026-01-01T00:00:00.000Z',
+                model: 'moonshot-v1-32k',
+                isDefault: true
+            },
+            {
+                id: 'tech_analysis',
+                name: '💻 科技产品分析',
+                createdAt: '2026-01-01T00:00:00.000Z',
+                model: 'moonshot-v1-32k',
+                isDefault: true
+            },
+            {
+                id: 'education_training',
+                name: '📚 教育培训讲座',
+                createdAt: '2026-01-01T00:00:00.000Z',
+                model: 'moonshot-v1-32k',
+                isDefault: true
+            }
+        ];
+
         // 加载模板列表
         function loadTemplateList() {
             const templates = getTemplates();
             const select = document.getElementById('templateSelect');
             select.innerHTML = '<option value="">-- 选择模板 --</option>';
-            templates.forEach(t => {
+
+            // 先添加默认模板
+            DEFAULT_TEMPLATES.forEach(t => {
                 select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+            });
+
+            // 再添加用户自定义模板
+            templates.forEach(t => {
+                if (!t.isDefault) {
+                    select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+                }
             });
         }
 
-        // 获取所有模板
+        // 获取所有模板（包括默认）
         function getTemplates() {
             const data = localStorage.getItem('analysis_templates');
             return data ? JSON.parse(data) : [];
+        }
+
+        // 获取有效模板（包括默认）
+        function getAllTemplates() {
+            const userTemplates = getTemplates().filter(t => !t.isDefault);
+            return [...DEFAULT_TEMPLATES, ...userTemplates];
         }
 
         // 保存模板
@@ -1965,7 +2013,7 @@ ${script}`;
             if (!name) return;
 
             const template = {
-                id: Date.now().toString(),
+                id: 'user_' + Date.now().toString(),
                 name: name,
                 createdAt: new Date().toISOString(),
                 model: document.getElementById('modelSelect').value
@@ -1984,8 +2032,15 @@ ${script}`;
             const templateId = document.getElementById('templateSelect').value;
             if (!templateId) return;
 
-            const templates = getTemplates();
-            const template = templates.find(t => t.id === templateId);
+            // 先查找默认模板
+            let template = DEFAULT_TEMPLATES.find(t => t.id === templateId);
+
+            // 如果没有找到，再查找用户模板
+            if (!template) {
+                const templates = getTemplates();
+                template = templates.find(t => t.id === templateId);
+            }
+
             if (!template) return;
 
             if (template.model) {
@@ -1998,22 +2053,22 @@ ${script}`;
 
         // 打开模板管理器
         function openTemplateManager() {
-            const templates = getTemplates();
+            const allTemplates = getAllTemplates();
 
-            if (templates.length === 0) {
-                showToast('暂无保存的模板');
+            if (allTemplates.length === 0) {
+                showToast('暂无模板');
                 return;
             }
 
-            const templateList = templates.map(t => `
+            const templateList = allTemplates.map(t => `
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 8px;">
                     <div>
-                        <div style="font-weight: 500;">${t.name}</div>
-                        <div style="font-size: 12px; color: #999;">模型：${t.model || 'moonshot-v1-32k'} · ${t.createdAt}</div>
+                        <div style="font-weight: 500;">${t.name} ${t.isDefault ? '<span style="font-size: 10px; background: #e0e0e0; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">内置</span>' : ''}</div>
+                        <div style="font-size: 12px; color: #999;">模型：${t.model || 'moonshot-v1-32k'}</div>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;" onclick="applyTemplate('${t.id}')">应用</button>
-                        <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #ffe3e3;" onclick="deleteTemplate('${t.id}')">删除</button>
+                        ${!t.isDefault ? `<button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #ffe3e3;" onclick="deleteTemplate('${t.id}')">删除</button>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -2032,8 +2087,7 @@ ${script}`;
 
         // 应用模板
         function applyTemplate(templateId) {
-            const templates = getTemplates();
-            const template = templates.find(t => t.id === templateId);
+            const template = getAllTemplates().find(t => t.id === templateId);
             if (!template) return;
 
             if (template.model) {
@@ -2043,10 +2097,20 @@ ${script}`;
 
             document.getElementById('templateSelect').value = templateId;
             showToast(`模板"${template.name}"已应用`, 'success');
+
+            // 关闭管理器
+            const modal = document.querySelector('div[style*="position: fixed"]');
+            if (modal) modal.remove();
         }
 
         // 删除模板
         function deleteTemplate(templateId) {
+            const template = getTemplates().find(t => t.id === templateId);
+            if (!template || template.isDefault) {
+                showToast('内置模板无法删除');
+                return;
+            }
+
             if (!confirm('确定要删除这个模板吗？')) return;
 
             const templates = getTemplates().filter(t => t.id !== templateId);
@@ -2055,6 +2119,9 @@ ${script}`;
             loadTemplateList();
             document.getElementById('templateSelect').value = '';
             showToast('模板已删除', 'success');
+
+            // 重新打开管理器显示更新后的列表
+            openTemplateManager();
         }
 
         // 页面加载时恢复配置
