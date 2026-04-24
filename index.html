@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>直播文稿分析工具</title>
+    <title>直播文稿分析工具 v2.2</title>
+    <!-- 禁止缓存，确保总是加载最新版本 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <!-- v2.2: 增加维度评语显示 -->
     <!-- 导出 PDF 所需的库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- 图表库 Chart.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -714,7 +717,7 @@
             document.getElementById('batchResults').innerHTML = '';
         }
 
-        // 开始批量分析
+        // 开始批量分析（带重试和限流保护）
         async function startBatchAnalysis() {
             if (batchFiles.length === 0) {
                 showToast('请先选择文件');
@@ -731,7 +734,11 @@
             const batchResults = [];
 
             document.getElementById('batchAnalyzeBtn').disabled = true;
-            document.getElementById('batchResults').innerHTML = '<div class="loading"><div class="spinner"></div><span>正在分析第 1/5 篇文稿...</span></div>';
+
+            // 在批量分析开始前，先等待 5 秒，让 API 限流计数器重置
+            console.log('等待 5 秒后开始批量分析...');
+            document.getElementById('batchResults').innerHTML = '<div class="loading"><div class="spinner"></div><span>等待 5 秒后开始分析（避免 API 限流）...</span></div>';
+            await new Promise(resolve => setTimeout(resolve, 5000));
 
             for (let i = 0; i < batchFiles.length; i++) {
                 const file = batchFiles[i];
@@ -740,22 +747,71 @@
                 try {
                     // 读取文件内容
                     const text = await readFileContent(file);
+                    const wordCount = text.length;
+                    console.log(`[文件 ${i+1}] ${file.name} 读取成功，字数：${wordCount}`);
 
-                    // 调用 API 分析
+                    // 构建提示词
                     const prompt = buildAnalysisPrompt(text);
-                    const response = await callKimiAPI(apiKey, prompt);
-                    const analysis = parseAnalysisResult(response);
+
+                    // 重试逻辑：最多重试 3 次
+                    let lastError = null;
+                    let analysisResult = null;
+                    const maxRetries = 3;
+                    const delays = [0, 3000, 6000]; // 每次重试前等待的时间
+
+                    for (let retry = 0; retry < maxRetries; retry++) {
+                        try {
+                            // 等待后重试
+                            if (delays[retry] > 0) {
+                                console.log(`[文件 ${i+1}] 第${retry}次重试，等待${delays[retry]/1000}秒...`);
+                                document.getElementById('batchResults').innerHTML = `<div class="loading"><div class="spinner"></div><span>第${retry}次重试，等待${delays[retry]/1000}秒...</span></div>`;
+                                await new Promise(resolve => setTimeout(resolve, delays[retry]));
+                            }
+
+                            console.log(`[文件 ${i+1}] 正在调用 Kimi API...`);
+                            const response = await callKimiAPI(apiKey, prompt, model, wordCount);
+                            analysisResult = parseAnalysisResult(response);
+                            console.log(`[文件 ${i+1}] ✅ 成功`);
+                            break;
+                        } catch (err) {
+                            console.warn(`[文件 ${i+1}] 第${retry + 1}次尝试失败：${err.message}`);
+                            lastError = err;
+
+                            // 判断是否是可重试的错误
+                            const isRetryable = err.message.includes('overloaded') ||
+                                               err.message.includes('timeout') ||
+                                               err.message.includes('network') ||
+                                               err.message.includes('无法连接') ||
+                                               err.message.includes('rate limit');
+
+                            if (!isRetryable) {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (analysisResult === null) {
+                        throw lastError || new Error('分析失败');
+                    }
 
                     batchResults.push({
                         filename: file.name,
                         text: text,
-                        analysis: analysis
+                        analysis: analysisResult
                     });
                 } catch (error) {
+                    console.error(`[文件 ${i+1}] ❌ 最终失败:`, error);
                     batchResults.push({
                         filename: file.name,
-                        error: error.message
+                        error: error.message || '分析失败'
                     });
+                }
+
+                // 在两个文件之间添加间隔
+                if (i < batchFiles.length - 1) {
+                    console.log('等待 8 秒后继续下一个文件...');
+                    document.getElementById('batchResults').innerHTML = `<div class="loading"><div class="spinner"></div><span>等待 8 秒后继续...</span></div>`;
+                    await new Promise(resolve => setTimeout(resolve, 8000));
                 }
             }
 
@@ -767,16 +823,31 @@
         // 读取文件内容
         function readFileContent(file) {
             return new Promise((resolve, reject) => {
+                const fileName = file.name.toLowerCase();
                 const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.onerror = reject;
 
-                // 简单处理：如果是二进制文件，需要后端解析
-                if (file.name.endsWith('.docx') || file.name.endsWith('.pdf')) {
+                reader.onload = (e) => {
+                    try {
+                        let text = e.target.result;
+                        // 清理文本：移除过多的空行和乱码
+                        text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+                        resolve(text);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+
+                reader.onerror = () => {
+                    reject(new Error(`文件读取失败：${reader.error?.message || '未知错误'}`));
+                };
+
+                // 检查文件类型（不区分大小写）
+                if (fileName.endsWith('.docx') || fileName.endsWith('.pdf')) {
                     reject(new Error('Word 和 PDF 文件需要通过后端 API 解析，请先上传到文件管理'));
                     return;
                 }
 
+                // 尝试以 UTF-8 读取
                 reader.readAsText(file, 'utf-8');
             });
         }
@@ -1395,6 +1466,10 @@ ${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
                     }
 
                     analysis = result.result;
+                    // 调试日志：打印 AI 返回的结果
+                    console.log('=== AI 返回的分析结果 ===', analysis);
+                    console.log('quality 字段:', analysis.quality);
+                    console.log('need_fit_comment:', analysis.quality?.need_fit_comment);
                 } else {
                     // 使用前端模式，直接调用 Kimi API
                     const apiKey = document.getElementById('apiKeyInput').value.trim();
@@ -1407,6 +1482,8 @@ ${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
 
                     const prompt = buildAnalysisPrompt(script);
                     const response = await callKimiAPI(apiKey, prompt);
+                    // 调试日志：打印 AI 返回的结果
+                    console.log('=== AI 返回的分析结果 ===', response);
                     console.log('API Response:', response);
 
                     // 解析结果
@@ -1450,6 +1527,7 @@ ${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
    - 违反广告法："最"、"第一"、"绝对"、"100%"等绝对化用语
 
 3. 内容质量评估（9 维度，各 0-100 分，按权重计算总分）
+   **注意：每个维度除了打分外，还必须生成对应的文字评语（xxx_comment），说明打分理由和具体观察**
    - 需求贴合度（权重 18%）：话题是否贴合市场需求、从用户痛点出发、解决核心问题
    - 论述质量（权重 18%）：问题界定是否清晰、观点是否明确、论证过程是否有说服力
    - 说服力（权重 15%）：论证深度、反面观点处理
@@ -1487,14 +1565,23 @@ ${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
     },
     "quality": {
         "need_fit_score": 0-100,
+        "need_fit_comment": "在此生成对需求贴合度的具体评语，结合文稿内容说明优点和不足",
         "argument_score": 0-100,
+        "argument_comment": "在此生成对论述质量的具体评语，结合文稿内容说明优点和不足",
         "persuasion_score": 0-100,
+        "persuasion_comment": "在此生成对说服力的具体评语，结合文稿内容说明优点和不足",
         "logic_score": 0-100,
+        "logic_comment": "在此生成对逻辑完整性的具体评语，结合文稿内容说明优点和不足",
         "practical_score": 0-100,
+        "practical_comment": "在此生成对实用价值的具体评语，结合文稿内容说明优点和不足",
         "framework_score": 0-100,
+        "framework_comment": "在此生成对逻辑框架的具体评语，结合文稿内容说明优点和不足",
         "clarity_score": 0-100,
+        "clarity_comment": "在此生成对易懂性的具体评语，结合文稿内容说明优点和不足",
         "data_score": 0-100,
+        "data_comment": "在此生成对数据详实度的具体评语，结合文稿内容说明优点和不足",
         "case_score": 0-100,
+        "case_comment": "在此生成对案例质量的具体评语，结合文稿内容说明优点和不足",
         "overall_score": 0-100,
         "deductions": [
             {
@@ -1514,13 +1601,10 @@ ${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
 ${script}`;
         }
 
-        // 调用 Kimi API
-        async function callKimiAPI(apiKey, prompt) {
+        // 调用 Kimi API（带超时控制）
+        async function callKimiAPI(apiKey, prompt, model, textLength) {
             const url = 'https://api.moonshot.cn/v1/chat/completions';
 
-            // 使用用户选择的模型
-            const model = document.getElementById('modelSelect').value;
-            const textLength = prompt.length;
             console.log(`使用模型：${model} (文稿长度：${textLength})`);
 
             const requestBody = {
@@ -1537,43 +1621,73 @@ ${script}`;
 
             console.log('Request body:', JSON.stringify(requestBody, null, 2));
 
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody)
-            });
+            // 获取当前选择的模型的上下文限制
+            const MODEL_TIMEOUT_CONFIG = {
+                'moonshot-v1-8k': 60000,      // 60 秒
+                'moonshot-v1-32k': 120000,    // 120 秒
+                'moonshot-v1-128k': 300000,   // 300 秒 (5 分钟)
+                'deepseek-chat': 300000,      // 300 秒 (5 分钟)
+                'qwen-max': 300000            // 300 秒 (5 分钟)
+            };
+            const baseTimeout = MODEL_TIMEOUT_CONFIG[model] || 180000; // 默认 180 秒
 
-            console.log('Response status:', response.status);
-            console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+            // 创建带超时的 fetch 请求
+            const controller = new AbortController();
+            const timeout = baseTimeout; // 使用固定超时时间
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Error response:', errorText);
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
+                });
 
-                let errorMessage = `HTTP ${response.status}`;
-                try {
-                    const errorData = JSON.parse(errorText);
-                    if (errorData.error && errorData.error.message) {
-                        errorMessage = errorData.error.message;
+                clearTimeout(timeoutId);
+
+                console.log('Response status:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+
+                    let errorMessage = `HTTP ${response.status}`;
+                    try {
+                        const errorData = JSON.parse(errorText);
+                        if (errorData.error && errorData.error.message) {
+                            errorMessage = errorData.error.message;
+                        }
+                    } catch (e) {
+                        errorMessage = errorText || response.statusText;
                     }
-                } catch (e) {
-                    errorMessage = errorText || response.statusText;
+
+                    throw new Error(errorMessage);
                 }
 
-                throw new Error(errorMessage);
+                const data = await response.json();
+                console.log('API success response:', data);
+
+                if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                    throw new Error('API 返回格式异常');
+                }
+
+                return data.choices[0].message.content;
+            } catch (error) {
+                clearTimeout(timeoutId);
+
+                // 区分不同类型的错误
+                if (error.name === 'AbortError') {
+                    throw new Error(`请求超时（>${timeout/1000}秒），文稿可能太长，建议切换更大模型`);
+                }
+                if (error instanceof TypeError && error.message.includes('fetch')) {
+                    throw new Error('网络错误：无法连接到 Kimi API，请检查网络连接');
+                }
+                throw error;
             }
-
-            const data = await response.json();
-            console.log('API success response:', data);
-
-            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-                throw new Error('API 返回格式异常');
-            }
-
-            return data.choices[0].message.content;
         }
 
         // 解析分析结果
@@ -1720,87 +1834,30 @@ ${script}`;
                         <span class="report-item-title">📊 质量维度评分</span>
                     </div>
                     <div class="report-item-content">
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>需求贴合度</span>
-                                <span>${analysis.quality.need_fit_score}分</span>
+                        ${[
+                            { name: '需求贴合度', score: analysis.quality.need_fit_score, comment: analysis.quality.need_fit_comment, color: 'need', weight: '18%' },
+                            { name: '论述质量', score: analysis.quality.argument_score, comment: analysis.quality.argument_comment, color: 'argument', weight: '18%' },
+                            { name: '说服力', score: analysis.quality.persuasion_score, comment: analysis.quality.persuasion_comment, color: 'persuasion', weight: '15%' },
+                            { name: '逻辑完整性', score: analysis.quality.logic_score, comment: analysis.quality.logic_comment, color: 'logic', weight: '12%' },
+                            { name: '实用价值', score: analysis.quality.practical_score, comment: analysis.quality.practical_comment, color: 'practical', weight: '12%' },
+                            { name: '逻辑框架', score: analysis.quality.framework_score, comment: analysis.quality.framework_comment, color: 'framework', weight: '10%' },
+                            { name: '易懂性', score: analysis.quality.clarity_score, comment: analysis.quality.clarity_comment, color: 'clarity', weight: '7%' },
+                            { name: '数据详实度', score: analysis.quality.data_score, comment: analysis.quality.data_comment, color: 'data', weight: '3%' },
+                            { name: '案例质量', score: analysis.quality.case_score, comment: analysis.quality.case_comment, color: 'case', weight: '5%' }
+                        ].map(d => `
+                            <div style="margin-bottom: 16px; padding: 12px; background: white; border-radius: 8px;">
+                                <div class="dimension-bar" style="margin-bottom: ${d.comment ? '8px' : '0'};">
+                                    <div class="dimension-label">
+                                        <span><strong>${d.name}</strong> <span style="font-size: 12px; color: #999;">权重${d.weight}</span></span>
+                                        <span style="font-weight: 600; color: ${d.score >= 80 ? '#2b8a3e' : d.score >= 60 ? '#e67700' : '#c92a2a'};">${d.score}分</span>
+                                    </div>
+                                    <div class="bar-container">
+                                        <div class="bar-fill ${d.color}" style="width: ${d.score}%"></div>
+                                    </div>
+                                </div>
+                                ${d.comment ? `<div style="font-size: 13px; color: #555; line-height: 1.6; padding-left: 4px;">${d.comment}</div>` : ''}
                             </div>
-                            <div class="bar-container">
-                                <div class="bar-fill need" style="width: ${analysis.quality.need_fit_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>论述质量</span>
-                                <span>${analysis.quality.argument_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill argument" style="width: ${analysis.quality.argument_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>说服力</span>
-                                <span>${analysis.quality.persuasion_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill persuasion" style="width: ${analysis.quality.persuasion_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>逻辑完整性</span>
-                                <span>${analysis.quality.logic_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill logic" style="width: ${analysis.quality.logic_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>实用价值</span>
-                                <span>${analysis.quality.practical_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill practical" style="width: ${analysis.quality.practical_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>逻辑框架</span>
-                                <span>${analysis.quality.framework_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill framework" style="width: ${analysis.quality.framework_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>易懂性</span>
-                                <span>${analysis.quality.clarity_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill clarity" style="width: ${analysis.quality.clarity_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>数据详实度</span>
-                                <span>${analysis.quality.data_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill data" style="width: ${analysis.quality.data_score}%"></div>
-                            </div>
-                        </div>
-                        <div class="dimension-bar">
-                            <div class="dimension-label">
-                                <span>案例质量</span>
-                                <span>${analysis.quality.case_score}分</span>
-                            </div>
-                            <div class="bar-container">
-                                <div class="bar-fill case" style="width: ${analysis.quality.case_score}%"></div>
-                            </div>
-                        </div>
+                        `).join('')}
                     </div>
                 </div>
 

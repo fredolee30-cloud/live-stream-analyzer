@@ -513,6 +513,7 @@ def build_analysis_prompt(script):
    - 违反广告法："最"、"第一"、"绝对"、"100%"等绝对化用语
 
 3. 内容质量评估（9 维度，各 0-100 分，按权重计算总分）
+   **注意：每个维度除了打分外，还必须生成对应的文字评语（xxx_comment），说明打分理由和具体观察**
    - 需求贴合度（权重 18%）：话题是否贴合市场需求、从用户痛点出发、解决核心问题
    - 论述质量（权重 18%）：问题界定是否清晰、观点是否明确、论证过程是否有说服力
    - 说服力（权重 15%）：论证深度、反面观点处理
@@ -550,14 +551,23 @@ def build_analysis_prompt(script):
     }},
     "quality": {{
         "need_fit_score": 0-100,
+        "need_fit_comment": "在此生成对需求贴合度的具体评语，结合文稿内容说明优点和不足",
         "argument_score": 0-100,
+        "argument_comment": "在此生成对论述质量的具体评语，结合文稿内容说明优点和不足",
         "persuasion_score": 0-100,
+        "persuasion_comment": "在此生成对说服力的具体评语，结合文稿内容说明优点和不足",
         "logic_score": 0-100,
+        "logic_comment": "在此生成对逻辑完整性的具体评语，结合文稿内容说明优点和不足",
         "practical_score": 0-100,
+        "practical_comment": "在此生成对实用价值的具体评语，结合文稿内容说明优点和不足",
         "framework_score": 0-100,
+        "framework_comment": "在此生成对逻辑框架的具体评语，结合文稿内容说明优点和不足",
         "clarity_score": 0-100,
+        "clarity_comment": "在此生成对易懂性的具体评语，结合文稿内容说明优点和不足",
         "data_score": 0-100,
+        "data_comment": "在此生成对数据详实度的具体评语，结合文稿内容说明优点和不足",
         "case_score": 0-100,
+        "case_comment": "在此生成对案例质量的具体评语，结合文稿内容说明优点和不足",
         "overall_score": 0-100,
         "deductions": [
             {{
