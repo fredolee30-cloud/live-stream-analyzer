@@ -544,7 +544,8 @@
         // ============================================
 
         // 后端 API 地址（留空则使用前端模式，直接调用 Kimi API）
-        const BACKEND_URL = 'https://live-stream-analyzer.onrender.com';
+        const BACKEND_URL = ''; // 前端模式：直接调用 Kimi API
+        // const BACKEND_URL = 'https://live-stream-analyzer.onrender.com'; // 后端模式
 
         // 保存 API Key 到本地存储
         function saveApiKey() {
@@ -1481,7 +1482,8 @@ ${currentAnalysis.suggestions?.join('\n') || '暂无'}`;
                     }
 
                     const prompt = buildAnalysisPrompt(script);
-                    const response = await callKimiAPI(apiKey, prompt);
+                    const model = document.getElementById('modelSelect').value;
+                    const response = await callKimiAPI(apiKey, prompt, model, script.length);
                     // 调试日志：打印 AI 返回的结果
                     console.log('=== AI 返回的分析结果 ===', response);
                     console.log('API Response:', response);
